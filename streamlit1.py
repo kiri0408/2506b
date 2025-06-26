@@ -1,57 +1,94 @@
 import streamlit as st
 import api_utils
-
-#file_path ='api_gpt4o.json'                       # API接続情報のファイルパス
-file_path ='api_o3_mini.json'                       # API接続情報のファイルパス
-api_data = api_utils.load_api_data(file_path)     # API接続情報を取得
-client, model = api_utils.create_client(api_data) # AIクライアント作成、モデル名を取得
+from typing import List, Dict, Any, Tuple
 
 
-# Streamlitの設定
-st.title("AIチャットアプリ")
+def load_api_client(file_path: str) -> Tuple[Any, str]:
+    """
+    API接続情報を読み込み、AIクライアントとモデル名を作成する。
 
-# セッションステートの初期化
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+    Args:
+        file_path (str): API接続情報のファイルパス
 
-# メッセージ履歴を表示
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    Returns:
+        client: AIクライアントオブジェクト
+        model (str): モデル名
+    """
+    api_data = api_utils.load_api_data(file_path)
+    client, model = api_utils.create_client(api_data)
+    return client, model
 
-# ユーザーからの入力を受け取る
-if prompt := st.chat_input("メッセージを入力してください"):
-    # ユーザーのメッセージを履歴に追加
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # チャットメッセージとして表示
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    print(prompt)
 
-    # AIからの応答をストリーミングで生成
+def display_messages(messages: List[Dict[str, str]]) -> None:
+    """
+    セッションステートのメッセージ履歴をStreamlitのチャットメッセージとして表示する。
+
+    Args:
+        messages (List[Dict[str, str]]): メッセージ履歴
+    """
+    for message in messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+
+def stream_ai_response(client: Any, model: str, messages: List[Dict[str, str]]) -> str:
+    """
+    AIからの応答をストリーミングで取得し、表示する。
+
+    Args:
+        client: AIクライアントオブジェクト
+        model (str): モデル名
+        messages (List[Dict[str, str]]): チャットメッセージ履歴
+
+    Returns:
+        str: AIの応答内容
+    """
     response = client.chat.completions.create(
         messages=[
             {"role": "system", "content": "あなたは優秀なアシスタントです。"},
-            *st.session_state.messages,
+            *messages,
         ],
         model=model,
         stream=True,
-        reasoning_effort="medium"   # low, medium, high  
+        reasoning_effort="medium"  # low, medium, high
     )
 
-    # ストリーミングされた応答を表示
     response_content = ""
-    message_container = st.empty()  # コンテナを作成
+    message_container = st.empty()
     for chunk in response:
         if len(chunk.choices) > 0:
             message = chunk.choices[0].delta.content
             try:
                 response_content += message
-            except :
-                response_content +='\n'
-            message_container.markdown( response_content )  # コンテナ内のテキストを更新
+            except Exception:
+                response_content += '\n'
+            message_container.markdown(response_content)
+    return response_content
 
-    # AIのメッセージを履歴に追加
-    st.session_state.messages.append({"role": "assistant", "content": response_content})
 
+def main():
+    st.title("AIチャットアプリ")
+
+    # API接続情報ファイルパス（必要に応じて変更してください）
+    file_path = 'api_o3_mini.json'
+
+    client, model = load_api_client(file_path)
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    display_messages(st.session_state.messages)
+
+    if prompt := st.chat_input("メッセージを入力してください"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        response_content = stream_ai_response(client, model, st.session_state.messages)
+
+        st.session_state.messages.append({"role": "assistant", "content": response_content})
+
+
+if __name__ == "__main__":
+    main()
